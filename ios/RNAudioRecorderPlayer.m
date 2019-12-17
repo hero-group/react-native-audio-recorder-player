@@ -96,6 +96,26 @@ double subscriptionDuration = 0.1;
     return dispatch_get_main_queue();
 }
 
+- (void)trimWithTime:(NSTimeInterval)time src:(NSURL *)src dst:(NSURL *)dst completion:(void (^)(BOOL success))completion {
+    [[NSFileManager defaultManager] removeItemAtURL:dst error:nil];
+    AVAsset *asset = [AVAsset assetWithURL:src];
+    
+    AVAssetExportSession *session = [AVAssetExportSession exportSessionWithAsset:asset presetName:AVAssetExportPresetAppleM4A];
+    if (session == nil) {
+        completion(NO);
+        return;
+    }
+    CMTime startTime = CMTimeMake((int)(floor(time * 100.0)), 100);
+    CMTimeRange timeRange = CMTimeRangeFromTimeToTime(startTime, asset.duration);
+    session.outputURL = dst;
+    session.outputFileType = AVFileTypeAppleM4A;
+    session.timeRange = timeRange;
+    [session exportAsynchronouslyWithCompletionHandler:^{
+        NSLog(@"trim Error %@", session.error.debugDescription);
+        completion(session.status == AVAssetExportSessionStatusCompleted);
+    }];
+}
+
 RCT_EXPORT_MODULE();
 
 - (NSArray<NSString *> *)supportedEvents
@@ -177,7 +197,10 @@ RCT_EXPORT_METHOD(startRecorder:(NSString*)path
 
   // Setup audio session
   AVAudioSession *session = [AVAudioSession sharedInstance];
-  [session setCategory:AVAudioSessionCategoryPlayAndRecord error:nil];
+  [session
+   setCategory:AVAudioSessionCategoryPlayAndRecord
+   withOptions:AVAudioSessionCategoryOptionDuckOthers | AVAudioSessionCategoryOptionDefaultToSpeaker
+   error:nil];
 
   // set volume default to speaker
   UInt32 doChangeDefaultRoute = 1;
@@ -208,8 +231,18 @@ RCT_EXPORT_METHOD(stopRecorder:(RCTPromiseResolveBlock)resolve
         AVAudioSession *audioSession = [AVAudioSession sharedInstance];
         [audioSession setActive:NO error:nil];
 
-        NSString *filePath = audioFileURL.absoluteString;
-        resolve(filePath);
+        NSURL *srcUrl = audioFileURL;
+        NSString *dstPath = NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES).firstObject;
+        NSURL *dstUrl = [NSURL fileURLWithPath:[dstPath stringByAppendingPathComponent:@"result.m4a"]];
+        
+        [self trimWithTime:0.2 src:srcUrl dst:dstUrl completion:^(BOOL success) {
+            if (success) {
+                [[NSFileManager defaultManager] removeItemAtURL:srcUrl error:nil];
+                [[NSFileManager defaultManager] moveItemAtURL:dstUrl toURL:srcUrl error:nil];
+            }
+            resolve(srcUrl.absoluteString);
+        }];
+        
     } else {
         reject(@"audioRecorder record", @"audioRecorder is not set", nil);
     }
