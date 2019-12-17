@@ -76,7 +76,7 @@
     "player"
   ],
   "license": "MIT",
-  "main": "index.js",
+  "main": "index.ts",
   "name": "react-native-audio-recorder-player",
   "peerDependencies": {
     "react": ">=16.10.0",
